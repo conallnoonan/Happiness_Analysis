@@ -1,0 +1,416 @@
+
+---
+title: "Analysis of GDP Per Capita's Effect on Happiness Scores"
+author: "Conall Noonan"
+date: " `r Sys.Date()`-* "
+output:
+  pdf_document:
+    includes:
+      in_header: preamble.tex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "/Users/conallnoonan/Documents/CSS_321/Final Project/happiness-r-analysis/data/raw")
+library(dplyr)
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(gtsummary)
+library(stargazer)
+```
+
+###  Introduction
+
+In this project, I will analyze the relationship between the GDP per Capita of countries, and their assigned happiness scores. The reason for this analysis is to conclude whether or not I can provide an accurate prediction of a country's Happiness Score based on the GDP Per Capita of a country. The units of analysis used in this report are as follows: Year, GDP Per Capita, and Happiness Score. GDP Per Capita and Year are later transformed to improve usability for linear regression.
+
+The happiness scores are measured in a ladder format, with 10 being the highest and 0 the lowest.
+
+### Data
+
+For this analysis I used 7 datasets, which I eventually filtered and combined. I downloaded all of these datasets from Kaggle.
+
+Datasets Used:
+
+"2015.csv": Data From 2015, filtered to include only Country Name, Happiness Score(by country), and GDP Per Capita.
+
+"2020.csv": Data from 2020, filtered to include only Country Name, Happiness Score(by country), and GDP Per Capita.
+
+"2022.csv": Data from 2022, filtered to include only Country Name, Happiness Score(by country), and GDP Per Capita.
+
+"2024.csv": Data from 2024, filtered to include only Country Name, Happiness Score(by country), and GDP Per Capita.
+
+"world-happiness-report-2021.csv": Data from 2024, filtered to include Happiness Ladder Score, and GDP Per Capita.
+
+"World Population.csv": Provides Population Data from 2024.
+
+"world_population.csv": Provides Population Data from 2022, 2020, and 2015.
+
+"combined_data": The result of data cleaning, combining the above 7 datasets.
+
+Variables Used:
+
+*GDP_Per_Capita*: the log of the total Gross Domestic Product of a country divided by its population
+
+*Year*: Year used, spanning from 2015 to 2024
+
+*Happiness Score*: The estimated "score" of happiness in a country(due to many factors, measured from 0-10)
+
+*Year_c*: Centered Year variable used for linear regression(increases interpretability of results)
+
+```{r, include=FALSE}
+data_2015 <- read.csv("2015.csv")
+data_2020 <- read.csv("2020.csv")
+data_2022 <- read.csv("2022.csv")
+data_2024 <- read.csv("2024.csv")
+pop_1 <- read.csv("World Population.csv")
+pop_2 <- read.csv("world_population.csv")
+data_happy <- read.csv("world-happiness-report-2021.csv")
+```
+
+For the data cleaning aspect of the project, I chose to select a few variables from each dataset to ease the merge process, and remove unnecessary data that could hinder the accuracy of the regression analysis. These variables include, GDP Per Capita(labeled differently depending on dataset), Country(later filtered out for accuracy), and Happiness Score(measured from 0-10, year-dependent).
+
+```{r, include=FALSE}
+data_2015_clean <- data_2015 %>%
+  select(Country, Happiness.Score, Economy..GDP.per.Capita.) %>%
+  rename(Score = Happiness.Score, 
+         GDP_Per_Capita = Economy..GDP.per.Capita.)
+
+data_2020_clean <- data_2020 %>%
+  select(Country.name, Happiness.score, Economy..GDP.per.Capita..) %>%
+  rename(Score = Happiness.score, Country = Country.name, 
+         GDP_Per_Capita = Economy..GDP.per.Capita..)  
+  
+data_2022_clean <- data_2022 %>%
+  select(Country.name, Happiness.score, Economy..GDP.per.Capita..) %>%
+  rename(Score = Happiness.score, Country = Country.name, 
+         GDP_Per_Capita = Economy..GDP.per.Capita..)
+  
+data_2024_clean <- data_2024 %>%
+  select(Country.name, Happiness.score, Economy..GDP.per.Capita..) %>%
+  rename(Score = Happiness.score, Country = Country.name, 
+         GDP_Per_Capita = Economy..GDP.per.Capita..)
+
+pop_1_clean <- pop_1 %>%
+  select(Country, Yearly.Change, Population..2024., Net.Change, Fert..Rate, 
+         Urban.Pop..) %>%
+  rename(YOY_Change = Yearly.Change, Population_2024 = Population..2024., 
+         Net_Change = Net.Change, Fertility_Rate = Fert..Rate, 
+         Urban_Pop = Urban.Pop..)
+
+pop_2_clean <- pop_2 %>%
+  select(CCA3, X2022.Population, X2020.Population, X2015.Population, 
+         X2010.Population, X2015.Population, Growth.Rate) %>%
+  rename(Country_Code = CCA3, Pop_2022 = X2022.Population, 
+         Pop_2020 = X2020.Population, Pop_2015 = X2015.Population,
+         Pop_2010 = X2010.Population, Growth_Rate = Growth.Rate)
+
+data_happy_clean <- data_happy %>%
+  select(Country.name, Ladder.score, Logged.GDP.per.capita) %>%
+  rename(Country = Country.name, Ladder.score = Ladder.score, 
+         Logged_GDP_percap = Logged.GDP.per.capita)
+```
+
+```{r, include=FALSE}
+combined_data <- bind_rows(
+  mutate(data_2015_clean, Year = 2015, GDP_Per_Capita = GDP_Per_Capita),
+  mutate(data_2020_clean, Year = 2020, GDP_Per_Capita = GDP_Per_Capita),
+  mutate(data_2022_clean, Year = 2022, GDP_Per_Capita = GDP_Per_Capita),
+  mutate(data_2024_clean, Year = 2024, GDP_Per_Capita = GDP_Per_Capita),
+  mutate(pop_1_clean, Year = 2024),
+  mutate(pop_2_clean, Year = 2022, Growth_Rate = Growth_Rate, 
+         Pop_2022 = Pop_2022),
+  mutate(data_happy_clean, Year = 2024, Ladder_Score = Ladder.score, 
+         GDP_Per_Cap = Logged_GDP_percap)
+)
+combined_data <- combined_data %>%
+  select(Score, GDP_Per_Capita, Year)
+drop_na(combined_data)
+combined_data <- combined_data %>%
+  transform(Year == factor(Year))
+```
+
+### Density Histogram of GDP Per Capita
+
+```{r, echo=FALSE}
+hist(
+  combined_data$GDP_Per_Capita,
+  freq = FALSE,
+  main = "GDP Per Capita",
+  xlab = "GDP Per Capita",
+  ylab = "Density"
+)
+```
+
+The original GDP Per Capita data we had was extremely right skewed, so I had to use log(), to ensure that the data was more symmetrical. In this visualization we see the spread of the data is mostly centered around 0.6 to 1.8, with very few extreme outliers.
+
+Another benefit of this, is that using the log of GDP Per Capita normalizes the distribution. When we normalize the data, we compress the larger values of GDP Per Capita and stretch the lower values, enabling us to draw more conclusions from our statistical methods like linear regression and t-tests.
+
+### Density Histogram of Happiness Score
+
+```{r, echo=FALSE}
+hist(
+  combined_data$Score,
+  freq = FALSE,
+  main = "Score Distribution",
+  xlab = "Score",
+  ylab = "Density"
+)
+```
+
+In this histogram, we see that most of the values for the variable *Happiness Score* are centered around 5 to 7, with very few outliers.
+
+### Density Histogram of Year
+
+```{r,echo=FALSE}
+hist(
+  combined_data$Year,
+  freq = FALSE,
+  main = "Year Distribution",
+  xlab = "Year",
+  ylab = "Density"
+)
+```
+
+As we can see in the plot above, our data pulls from the years 2015, 2020, 2022, and 2024, with most of the data coming from the year 2024.
+
+### Plot of Happiness Score vs GDP Per Capita with fitted line
+
+```{r, echo=FALSE}
+df_plot <- combined_data %>%
+  filter(!is.na(Score)) %>%
+  mutate(
+    GDP_Per_Capita = as.numeric(gsub(",", "", as.character(GDP_Per_Capita))),
+    Year = factor(Year)
+  ) %>%
+  filter(!is.na(GDP_Per_Capita), GDP_Per_Capita > 0)
+
+ggplot(df_plot, aes(GDP_Per_Capita, Score)) +
+  geom_point(aes(color = factor(Year)), alpha = 0.6, size = 1.8) +
+  scale_x_log10() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue", aes(group = 1)) +
+  labs(x = "GDP per Capita (log)", y = "Score", color = "Year")
+```
+
+In this visualization, we can see that our linear model fits our data somewhat well, signifying a relationship between *GDP Per Capita* and *Happiness Score*.
+
+### Regression and Analysis
+
+The Research Question:
+
+We aim to answer the question, "Does GDP Per Capita have a statistically significant effect on Happiness Scores?", using our data. If we can answer this, we can also use our linear models to predict a countries Happiness Score based off of it's GDP Per Capita.
+
+Null Hypothesis($H_0$): $\beta_{GDP~Per~Capita} = 0$: GDP Per Capita has no statistically significant effect on the reported Happiness Scores of Countries.
+
+Alternative Hypothesis($H_1$): $\beta_{GDP~Per~Capita} \neq 0$: GDP Per Capita does have a statistically significant effect on the reported Happiness Scores of Countries.
+
+```{r, echo=FALSE}
+combined_data <- transform(combined_data,
+                           Year_c = Year - mean(Year, na.rm = TRUE))
+model1 <- lm(Score ~ GDP_Per_Capita, data = combined_data)
+summary(model1)
+confint(model1)
+model1 %>%
+  tbl_regression()
+```
+
+```{r, echo=FALSE}
+stargazer(model1,
+          type = "text",
+          title = "Regression Results for Baseline Linear Model",
+          dep.var.labels = "Happiness Score",
+          covariate.labels = c("GDP Per Capita"),
+          digits = 3,
+          out = "model")
+```
+
+As we can see in this initial regression model, not controlling for confounders, the fitted linear equation for this linear model is:
+
+$\hat{score}$ = 3.69 + 1.59 x *GDP_Per_Capita*
+
+From this, we know that *Happiness Score* is equal to 3.69 when *GDP Per Capita* is 0(unrealistic as *GDP Per Capita* is never 0). We also see that the relationship between *GDP Per Capita* and *Happiness Score* is equal to a 1.59 point increase in Score when there is a one point increase in *GDP Per Capita*.
+
+We also see that the $R^2$ is equal to 0.454 which means that about 45% of the variation in *Happiness Score* is explained by *GDP Per Capita*, showing a significant relationship between the two variables.
+
+Finally we see that the p-value is less than 0.001 which indicates strong evidence against the null hypothesis($H_0$).
+
+In addition to this, our 95% Confidence Interval is 1.5 and 1.7, meaning that we are 95% confident that the true effect of *GDP Per Capita* on *Happiness Score* lies somewhere between +1.5 and +1.7 Score points.
+
+
+```{r, echo=FALSE}
+combined_data <- subset(combined_data, GDP_Per_Capita > 0)
+combined_data$Year <- as.numeric(as.character(combined_data$Year))
+combined_data <- transform(combined_data,
+                           Year_c = Year - mean(Year, na.rm = TRUE))
+model2 <- lm(Score ~ GDP_Per_Capita + Year_c, data = combined_data)
+summary(model2)
+coef(model2)
+model2 %>%
+  tbl_regression()
+```
+
+```{r, echo=FALSE}
+stargazer(model2,
+          type = "text",
+          title = "Regression Results: Second Model with Confounder 'Year'",
+          dep.var.labels = "Happiness Score",
+          covariate.labels = c("GDP Per Capita", "Centered Year"),
+          digits = 3,
+          out = "model2.txt")
+```
+
+For the second model, I needed to transform our *Year* variable to ensure that the model is not evaluating its intercept value for when our confounder *Year* is 0, but rather a centered variable to ensure that our model is interpretable.
+
+As we can see in the model where we do control for confounding variable *Year*, we see the results of our second model do change. We see that our linear model equation is now:
+
+$\hat{score}$ = 3.29 + 1.96 x *GDP Per Capita* - 0.11 x *Year*
+
+We see now that controlling for *Year* changes our intercept value, or our *Happiness Score* value when *GDP Per Capita* is 0, changes from 3.741 to 3.29, meaning *Happiness Score* is equal to 3.29 when *GDP Per Capita* is equal to 0.
+
+We also see that when controlling for *Year*, our value of $\beta_1X$, or the effect of a 1 point increase on *GDP Per Capita* on *Happiness Score*, changes from 1.59 to 1.96, meaning the effect of *GDP Per Capita* on *Happiness Score* was higher than we initially calculated when we hold *Year* constant.
+
+We also see that the $R^2$ score decreases from 0.454 to 0.54, meaning that about 54% of the variation in *Happiness Score* is explained by *Year* and *GDP Per Capita*. 
+
+The p-value when we hold *Year* constant is also less than 0.001, confirming our earlier rejection of the null hypothesis, and adding further confirmation of the statistically significant effect of *GDP Per Capita* on *Happiness Score*.
+
+Our 95% Confidence Interval shows us that we can be 95% confident that the true effect of *GDP Per Capita* on *Happiness Score* lies somewhere between +1.8 and +2.1, when controlling for confounder *Year*. We are also 95% confident that the true effect of *Year* on Happiness Score lies between -0.13 and -0.09.
+
+We can also conduct a t-test to see whether the mean *Happiness Score* is significantly different for countries with GDP Per Capita above and below the median.
+
+```{r, echo=FALSE}
+combined_data$gdp_group <- ifelse(combined_data$GDP_Per_Capita > median(combined_data$GDP_Per_Capita, na.rm = TRUE),
+                                                                        "Above Median", "Below Median")
+t.test(Score ~ gdp_group, data = combined_data)
+```
+
+From this t-test we see that there is strong statistical evidence that countries that have an above median *GDP Per Capita* have a higher average *Happiness Score* than countries with a below average *GDP Per Capita*. The p-value is significantly smaller than 0.001, meaning that we can confidently reject the null hypothesis($H_0$). We can also conclude that on average, countries with an above median *GDP Per Capita* have a higher average *Happiness Score* than those with below median *GDP Per Capita* by about 1.33 points.
+
+### Predictions
+
+To use my model to make a prediction of Happiness Score for 2025, there were first a few steps I needed to take...
+
+```{r,echo=FALSE}
+year_mean <- mean(combined_data$Year, na.rm = TRUE)
+year_c_2025 <- 2025 - year_mean
+```
+
+We want to use our model to predict the happiness score of a country with a GDP Per Capita of $30,000 in 2025.
+
+To do this, we need to set the value equal to 3000 then use log() twice, to ensure that it is on the same scale as our training data.
+
+```{r, echo=FALSE}
+gdp_2025 <- log(30000)
+gdp_2025 <- log(gdp_2025)
+```
+
+Next I had to create a new dataframe using these two values, for our prediction model.
+
+```{r, echo=FALSE}
+data_2025_pred <- data.frame(
+  GDP_Per_Capita = gdp_2025,
+  Year_c = year_c_2025
+  )
+```
+
+Then we can run our model to get our prediction value:
+
+```{r, echo=FALSE}
+predict_2025 <- predict(model2, newdata = data_2025_pred)
+predict_2025
+```
+
+We see that our prediction value is a score of 7.31, when we check to see the score of a country with a GDP Per Capita of $30,000(in 2025),like Finland by going back to one of the original datasets, we see that the score prediction is accurate with a margin of error of around 0.5.
+
+```{r, echo=FALSE}
+data_happy$Ladder.score[data_happy$Country.name == "Finland"]
+```
+
+We can also plot this prediction.
+
+```{r, echo=FALSE}
+plot(combined_data$GDP_Per_Capita, combined_data$Score,
+     xlim = c(min(combined_data$GDP_Per_Capita, gdp_2025) - 0.5,
+              max(combined_data$GDP_Per_Capita, gdp_2025) + 0.5),
+     ylim = c(min(combined_data$Score, predict_2025) - 1,
+              max(combined_data$Score, predict_2025) + 1),
+     main = "Model Prediction: Score vs Transformed GDP",
+     xlab = "Transformed GDP per Capita",
+     ylab = "Happiness Score",
+     pch = 20, col = "blue")
+points(gdp_2025, predict_2025, col="red", pch = 17, cex = 1)
+text(gdp_2025, predict_2025 + 0.3, labels = "Predicted Score", col = "red", cex = 0.4)
+```
+
+
+We can also make another prediction to test the accuracy of our model, for a country with a GDP Per Capita of $20,000 like Mexico.
+
+```{r, echo=FALSE}
+year_mean <- mean(combined_data$Year, na.rm = TRUE)
+year_c_2026 <- 2026 - year_mean
+gdp_low <- log(20000)
+gdp_low <- log(gdp_low)
+
+predict_low <- data.frame(
+  GDP_Per_Capita = gdp_low,
+  Year_c = year_c_2026
+)
+
+predict_l <- predict(model2, newdata = predict_low)
+predict_l
+```
+
+When we compare this predicted score to the actual score of Mexico, we see that our model is less accurate than we predicted with the margin of error growing to around 0.80 from 0.50.
+
+```{r, echo=FALSE}
+data_happy$Ladder.score[data_happy$Country.name == "Mexico"]
+```
+
+Plotted Prediction
+
+```{r, echo=FALSE}
+plot(combined_data$GDP_Per_Capita, combined_data$Score,
+     xlim = c(min(combined_data$GDP_Per_Capita, gdp_low) - 0.5,
+              max(combined_data$GDP_Per_Capita, gdp_low) + 0.5),
+     ylim = c(min(combined_data$Score, predict_l) - 1,
+              max(combined_data$Score, predict_l) + 1),
+     main = "Model Prediction: Score vs Transformed GDP",
+     xlab = "Transformed GDP per Capita",
+     ylab = "Happiness Score",
+     pch = 20, col = "blue")
+points(gdp_low, predict_l, col="red", pch = 17, cex = 1)
+text(gdp_low, predict_l + 0.3, labels = "Predicted Score", col = "red", cex = 0.4)
+```
+
+We can also plot our residuals to check for non-linearity, and assess whether the model over or under-predicted.
+
+```{r, echo=FALSE}
+plot(model2, which = 1)
+```
+
+From this we see that there is no cause for worry about nonlinearity in our model. We also see that by the even distribution of Residuals around 0, that the model neither over or under-predicted our Happiness Score.
+
+### Conclusion
+
+From our statistical analyses, we can confidently reject our Null Hypothesis($H_0$), or "GDP Per Capita has no statistically significant effect on the reported Happiness Scores of Countries". We first see supporting evidence in our first linear regression model. When we ran our first model, estimating the effect of *GDP Per Capita* on *Happiness Score*, without controlling for confounders. From there we see that an increase of GDP Per Capita(log to resolve skew), results in an increase of *Happiness Score*, by 1.6 points. The p-value is also less than 0.001 so we can draw the conclusion of strong statistical significance. We also see that there is a moderately strong relationship between the two variables as the $R^2$ value is 0.454, meaning that ~45% of the variance in *Happiness Score* is explained by *GDP Per Capita*.
+
+We then run our second model, which estimates the effect of *GDP Per Capita* on *Happiness Score*, when controlling for confounder *Year*. We first had to center our Year variable, to ensure the interpretability of our model. We then see stronger evidence to reject our Null Hypothesis. We see that the increase in *Happiness Score* as a result of a 1 point increase in *GDP Per Capita* increases from 1.6 to 1.96, a significant increase when the score is scaled from 0-10. Once again, our p-values(both for *Year* and *GDP Per Capita*) are less than 0.001, so again we can conclude that there is a strong statistical effect on *Happiness Score* by both variables. We also see that our $R_2$ score increases to 0.54, meaning that 54% of the variation in *Happiness Score* is explained by both *GDP Per Capita* **AND** *Year*.
+
+While these models and analyses show a statistically significant effect of *GDP Per Capita* on *Happiness Score*, it is important to keep in consideration that there are possible confounders that we could not control for with the data we had. Examples of these confounders are: weather, purchasing power, level of safety, or whether the government is democratic or not. It is important to remember that these confounders could have a very signifcant effect on both *Happiness Score* and *GDP Per Capita* that could invalidate the results that we drew from our analyses.
+
+### Sources & Data:
+
+https://www.kaggle.com/datasets/muhammedtausif/world-population-by-countries
+
+https://www.kaggle.com/datasets/ajaypalsinghlo/world-happiness-report-2021
+
+https://www.kaggle.com/code/hasibalmuzdadid/world-population-analysis/input
+
+https://www.kaggle.com/datasets/bhavikjikadara/world-population-statistics-2023/data
+
+https://www.worldometers.info/gdp/gdp-per-capita/
+
+https://www.kaggle.com/datasets/dataanalyst001/world-population-by-country-2024
+
+https://www.kaggle.com/datasets/ankushpanday1/global-population-dataset-20142024
+
+https://www.kaggle.com/datasets/thebreaker49/world-population
