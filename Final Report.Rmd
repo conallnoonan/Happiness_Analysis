@@ -10,7 +10,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_knit$set(root.dir = "/Users/conallnoonan/Documents/CSS_321/Final Project/happiness-r-analysis/data/raw")
+knitr::opts_knit$set(root.dir = "~/Documents/CSS_321/Final Project/happiness-r-analysis/data/raw")
 library(dplyr)
 library(readr)
 library(tidyr)
